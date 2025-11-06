@@ -1,6 +1,13 @@
 from fastapi import FastAPI
 import requests
 
+#importando os banco e modelos
+from db.database import Base, engine
+from models.pokemon import Pokemon
+
+#cria todas as tabelas definidas nos modelos
+Base.metadata.create_all(bind=engine)
+
 app = FastAPI()
 
 @app.get("/")
