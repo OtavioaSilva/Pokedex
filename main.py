@@ -10,6 +10,7 @@ from models import *
 # from models.pokemon_tipo import PokemonTipo
 
 #cria todas as tabelas definidas nos modelos
+#Base.metadata.drop_all(bind=engine)
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI()
@@ -21,15 +22,18 @@ def root():
 @app.get("/pokemon/{nome}")
 def pegar_pokemon(nome: str, db: Session = Depends(get_db)):
     pokemon_db = db.query(Pokemon).filter(Pokemon.nome == nome.lower()).first()
-    if pokemon_db:
+    
+    if pokemon_db: #Busca a informação no banco
+        tipos = [pt.tipo.nome for pt in pokemon_db.pokemon_tipos]
         return{
             "id": pokemon_db.id,
             "nome": pokemon_db.nome,
             "altura": pokemon_db.altura,
             "peso": pokemon_db.peso,
-            "tipos": pokemon_db.tipos.split(",")
+            "tipos": tipos
         }
     
+    #se não tiver no banco, vai buscar na api agora
     url = f"https://pokeapi.co/api/v2/pokemon/{nome.lower()}"
     resposta = requests.get(url)
 
@@ -38,20 +42,40 @@ def pegar_pokemon(nome: str, db: Session = Depends(get_db)):
     
     dados = resposta.json()
 
-    novo = Pokemon (
-        id= dados["id"],
-        nome= dados["name"],
-        altura= dados["height"],
-        peso= dados["weight"],
-        tipos= [t["type"]["name"] for t in dados ["types"]]
+    #criação do pokemon
+    novo_pokemon = Pokemon (
+        id = dados["id"],
+        nome = dados["name"].lower(),
+        altura = dados["height"],
+        peso = dados["weight"]
     )
-    db.add(novo)
+
+    db.add(novo_pokemon)
+    db.commit()
+    db.refresh(novo_pokemon)
+
+    tipos_criados = []
+    for t in dados["types"]:
+        tipo_nome = t["type"]["name"]
+        
+        #verifica se o tipo ja existe
+        tipo_db = db.query(Tipo).filter(Tipo.nome == tipo_nome).first()
+        if not tipo_db:
+            tipo_db = Tipo(nome=tipo_nome)
+            db.add(tipo_db)
+            db.commit()
+            db.refresh(tipo_db)
+
+        pokemon_tipo = PokemonTipo(pokemon=novo_pokemon, tipo=tipo_db)
+        db.add(pokemon_tipo)
+        tipos_criados.append(tipo_db.nome)
+    
     db.commit()
 
     return {
-        "id": novo.id,
-        "nome": novo.nome,
-        "altura": novo.altura,
-        "peso": novo.peso,
-        "tipos": novo.tipos.split(",")
+        "id": novo_pokemon.id,
+        "nome": novo_pokemon.nome,
+        "altura": novo_pokemon.altura,
+        "peso": novo_pokemon.peso,
+        "tipos": [tipo.nome for tipo in novo_pokemon.tipos]
     }

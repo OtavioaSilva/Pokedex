@@ -9,5 +9,5 @@ class PokemonTipo(Base):
     id_pokemon = Column(Integer, ForeignKey("pokemon.id"))
     id_tipo = Column(Integer, ForeignKey("tipo.id"))
 
-    pokemon = relationship("Pokemon", back_populates="tipos_associacao")
-    tipo = relationship("Tipo", back_populates="pokemons_associacao")
+    pokemon = relationship("Pokemon", back_populates="pokemon_tipos")
+    tipo = relationship("Tipo", back_populates="pokemon_tipos")
