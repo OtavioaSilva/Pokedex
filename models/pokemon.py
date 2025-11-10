@@ -10,6 +10,4 @@ class Pokemon(Base):
     altura = Column(Integer)
     peso = Column(Integer)
 
-    #relação para tipos n:n
-    pokemon_tipos = relationship("PokemonTipo", back_populates="pokemon")
     tipos = relationship("Tipo", secondary="pokemon_tipo", back_populates="pokemons")

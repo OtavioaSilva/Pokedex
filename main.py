@@ -24,13 +24,13 @@ def pegar_pokemon(nome: str, db: Session = Depends(get_db)):
     pokemon_db = db.query(Pokemon).filter(Pokemon.nome == nome.lower()).first()
     
     if pokemon_db: #Busca a informação no banco
-        tipos = [pt.tipo.nome for pt in pokemon_db.pokemon_tipos]
+        
         return{
             "id": pokemon_db.id,
             "nome": pokemon_db.nome,
             "altura": pokemon_db.altura,
             "peso": pokemon_db.peso,
-            "tipos": tipos
+            "tipos": [t.nome for t in pokemon_db.tipos]
         }
     
     #se não tiver no banco, vai buscar na api agora
@@ -54,7 +54,6 @@ def pegar_pokemon(nome: str, db: Session = Depends(get_db)):
     db.commit()
     db.refresh(novo_pokemon)
 
-    tipos_criados = []
     for t in dados["types"]:
         tipo_nome = t["type"]["name"]
         
@@ -66,9 +65,7 @@ def pegar_pokemon(nome: str, db: Session = Depends(get_db)):
             db.commit()
             db.refresh(tipo_db)
 
-        pokemon_tipo = PokemonTipo(pokemon=novo_pokemon, tipo=tipo_db)
-        db.add(pokemon_tipo)
-        tipos_criados.append(tipo_db.nome)
+        novo_pokemon.tipos.append(tipo_db)
     
     db.commit()
 
