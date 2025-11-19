@@ -76,3 +76,17 @@ def pegar_pokemon(nome: str, db: Session = Depends(get_db)):
         "peso": novo_pokemon.peso,
         "tipos": [tipo.nome for tipo in novo_pokemon.tipos]
     }
+
+@app.get("/pokemons")
+def listar_pokemons(db: Session = Depends(get_db)):
+    pokemons = db.query(Pokemon).all()
+
+    resultado = []
+    for p in pokemons:
+        resultado.append({"id": p.id,
+                          "nome": p.nome,
+                          "altura": p.altura,
+                          "peso": p.peso,
+                          "tipos": [t.nome for t in p.tipos]
+                          })
+    return resultado

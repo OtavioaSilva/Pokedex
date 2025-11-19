@@ -1,0 +1,133 @@
+import time
+import argparse
+import sys
+import requests
+from requests.exceptions import RequestException
+from pathlib import Path
+
+# adiciona a raiz do projeto ao sys.path
+sys.path.append(str(Path(__file__).resolve().parent.parent))
+
+from db.database import SessionLocal, engine, Base
+from models import Pokemon, Tipo
+
+
+
+#Configuração
+POKEAPI_LIST_URL = "https://pokeapi.co/api/v2/pokemon?limit=5000"
+POKEAPI_POKEMON_URL = "https://pokeapi.co/api/v2/pokemon/{}"
+DEFAULT_DELAY = 0.1 # Tempo entre as requisições
+MAX_RETRIES = 3
+
+def get_pokemon_list() -> list[dict]:
+    resp = requests.get(POKEAPI_LIST_URL, timeout=10)
+    resp.raise_for_status()
+    data = resp.json()
+    return data.get("results", [])
+
+def fetch_pokemon_detail(identifier: str, retries: int = MAX_RETRIES) -> dict | None:
+    url = POKEAPI_POKEMON_URL.format(identifier)
+    for attempt in range(1, retries + 1):
+        try:
+            resp = requests.get(url, timeout=10)
+            if resp.status_code == 404:
+                return None
+            resp.raise_for_status()
+            return resp.json()
+        except RequestException as e:
+            wait = attempt
+            print(f"[Aviso] erro ao buscar {identifier}: {e}. retry {attempt}/{retries} (espera) {wait}s)...")
+            time.sleep(wait)
+    
+    print(f" [ERRO] não foi possível buscar {identifier} depois de {retries} tentativas.")
+    return None
+
+def create_tables_if_needed():
+     Base.metadata.create_all(bind=engine)
+
+def import_all(delay: float = DEFAULT_DELAY, start: int = 1, end: int | None = None) -> None:
+    create_tables_if_needed()
+    db = SessionLocal()
+    try:
+        if end is None:
+            print("Buscando lista completa de pokemons na PokeAPI.")
+            lista = get_pokemon_list()
+            ids = []
+            for item in lista:
+                try:
+                    url = item["url"].rstrip("/")
+                    ident = int(url.split("/")[-1])
+                    ids.append(ident)
+                except Exception:
+                    continue
+            print(f"Total estimado de pokemons: {len(ids)}")
+        else:
+            ids = list(range(start, end + 1))
+            print(f"Importando ids do {start} ao {end} (fornecido por argumento).")
+
+        processed = 0
+        imported = 0
+        skipped = 0
+
+        for poke_id in ids:
+            processed += 1
+
+            existing = db.query(Pokemon).filter(Pokemon.id == poke_id).first()
+            if existing:
+                print(f"[{poke_id}] Pulado - já existe ({existing.nome}).")
+                skipped += 1
+                continue
+            
+            print(f"[{poke_id}] Buscando...")
+            dados = fetch_pokemon_detail(poke_id)
+            if dados is None:
+                print(f"{poke_id} não encontrado (404) - Pulando")
+                skipped += 1
+                time.sleep(delay)
+                continue
+            
+            #criar o pokemon
+            novo_pokemon = Pokemon(
+                id = dados["id"],
+                nome = dados["name"].lower(),
+                altura = dados.get("height"),
+                peso = dados.get("weight"),
+            )
+            db.add(novo_pokemon)
+            db.commit()
+            db.refresh(novo_pokemon)
+
+            #associar tipo ao pokemon
+            tipos_nomes = [t["type"]["name"].lower() for t in dados.get("types", [])]
+            for tipo_nome in tipos_nomes:
+                tipo_db = db.query(Tipo).filter(Tipo.nome == tipo_nome).first()
+                if tipo_db is None:
+                    tipo_db = Tipo(nome=tipo_nome)
+                    db.add(tipo_db)
+                    db.commit()
+                    db.refresh(tipo_db)
+                novo_pokemon.tipos.append(tipo_db)
+            
+            db.add(novo_pokemon)
+            db.commit()
+            db.refresh(novo_pokemon)
+
+            print(f"[{poke_id}] Importando: {novo_pokemon.nome} -> tipos: {', '.join(tipos_nomes) or '-'}")
+            imported += 1
+            time.sleep(delay)
+
+        print("-- Resumo --")
+        print(f"Processados: {processed} Importados: {imported} Pulados/Não Encontrados: {skipped}")
+    finally:
+        db.close()
+
+def parse_args_and_run() -> None:
+    parser = argparse.ArgumentParser(description="Importar pokemons da PokeAPI para banco local.")
+    parser.add_argument("--start", type=int, default=1, help="ID Inicial (inclusive).")
+    parser.add_argument("--end", type=int, default=None, help="ID Final (inclusive).")
+    parser.add_argument("--delay", type=float, default=DEFAULT_DELAY, help="Delay em segundos entre requisições.")
+    args = parser.parse_args()
+    import_all(delay=args.delay, start=args.start, end=args.end)
+
+if __name__ == "__main__":
+    parse_args_and_run()
