@@ -36,7 +36,8 @@ htmlcov/
 
 # dotenv and secrets
 .env
-.env.* 
+.env.*
+!.env.example 
 
 # Misc
 *.log
